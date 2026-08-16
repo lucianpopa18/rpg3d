@@ -59,10 +59,18 @@ async function main() {
 
   // ---- personaj ----
   const res = await BABYLON.SceneLoader.ImportMeshAsync('', '', 'HVGirl.glb', scene);
-  const hero = res.meshes[0];
-  hero.scaling.scaleInPlace(0.1);
-  hero.position = new BABYLON.Vector3(0, 0, 0);
+  const model = res.meshes[0];
+  model.scaling.scaleInPlace(0.1);
+  model.position.set(0, 0, 0);
   res.meshes.forEach(m => { if (m.getTotalVertices && m.getTotalVertices() > 0) shadow.addShadowCaster(m); });
+
+  // Nod „player" curat, controlat cu Euler (glTF __root__ are un quaternion de flip
+  // care ignoră .rotation — de aceea învelim modelul într-un nod al nostru).
+  const hero = new BABYLON.TransformNode('player', scene);
+  model.parent = hero;
+  hero.position.set(0, 0, 0);
+  hero.rotation = new BABYLON.Vector3(0, 0, 0);
+  const MODEL_YAW = Math.PI; // offset de orientare al modelului (HVGirl); flip ușor dacă merge cu spatele
 
   const groups = res.animationGroups;
   groups.forEach(g => g.stop());
@@ -88,44 +96,44 @@ async function main() {
   const joy = createJoystick(app);          // stânga = mișcare
   createLookControls(app, camState);         // dreapta = rotire + zoom
 
-  const SPEED_WALK = 3.0, SPEED_RUN = 6.4;
-  let curSpeed = 0; // rampă de viteză pentru pornire/oprire lină
+  const SPEED_WALK = 3.0, SPEED_RUN = 6.6;
+  let curSpeed = 0;                          // rampă de viteză
+  const lastDir = new BABYLON.Vector3(0, 0, 1); // ultima direcție validă (pt. oprire lină, fără NaN)
 
   scene.onBeforeRenderObservable.add(() => {
     const dt = Math.min(0.05, engine.getDeltaTime() / 1000);
-    const v = joy.value; // { x, y, mag } în [-1,1]
+    const v = joy.value; // { x, y, mag }
 
     // direcția orizontală „înainte" (dinspre cameră spre erou, în scenă)
     const fwd = new BABYLON.Vector3(-Math.cos(camState.alpha), 0, -Math.sin(camState.alpha));
-    const right = new BABYLON.Vector3(-fwd.z, 0, fwd.x); // perpendicular pe fwd (dreapta)
-    // sus pe joystick (v.y negativ) = înainte
-    const move = fwd.scale(-v.y).add(right.scale(v.x));
-    move.y = 0;
+    const right = new BABYLON.Vector3(-fwd.z, 0, fwd.x);
+    const move = fwd.scale(-v.y).add(right.scale(v.x)); move.y = 0;
 
-    const wantMove = v.mag > 0.12 && move.lengthSquared() > 0.0001;
+    const wantMove = v.mag > 0.15 && move.lengthSquared() > 0.0001;
     if (wantMove) {
       move.normalize();
-      const running = v.mag > 0.7;
+      lastDir.copyFrom(move);
+      const running = v.mag > 0.72;
       const targetSpeed = running ? SPEED_RUN : SPEED_WALK;
-      curSpeed += (targetSpeed - curSpeed) * Math.min(1, dt * 8);
-      hero.position.addInPlace(move.scale(curSpeed * dt));
+      curSpeed += (targetSpeed - curSpeed) * Math.min(1, dt * 9);
       // rotește eroul lin spre direcția de mers
-      const targetYaw = Math.atan2(move.x, move.z);
+      const targetYaw = Math.atan2(move.x, move.z) + MODEL_YAW;
       const diff = ((targetYaw - hero.rotation.y + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
-      hero.rotation.y += diff * Math.min(1, dt * 14);
+      hero.rotation.y += diff * Math.min(1, dt * 16);
       play(running ? anims.run : anims.walk);
     } else {
-      curSpeed += (0 - curSpeed) * Math.min(1, dt * 10);
-      if (curSpeed > 0.05) hero.position.addInPlace(move.lengthSquared() > 0 ? move.normalize().scale(curSpeed * dt) : BABYLON.Vector3.Zero());
+      curSpeed += (0 - curSpeed) * Math.min(1, dt * 12);
       play(anims.idle);
     }
+    // deplasare (folosește ultima direcție validă la decelerare — fără NaN)
+    if (curSpeed > 0.02) hero.position.addInPlace(lastDir.scale(curSpeed * dt));
 
-    // camera urmărește lin eroul + aplică alpha/beta/radius din control
-    BABYLON.Vector3.LerpToRef(camFocus, hero.position.add(new BABYLON.Vector3(0, 1.2, 0)), Math.min(1, dt * 10), camFocus);
+    // camera: urmărire lină a focusului + rotire/zoom aproape 1:1 (crisp)
+    BABYLON.Vector3.LerpToRef(camFocus, hero.position.add(new BABYLON.Vector3(0, 1.25, 0)), Math.min(1, dt * 12), camFocus);
     camera.target.copyFrom(camFocus);
-    camera.alpha += (camState.alpha - camera.alpha) * Math.min(1, dt * 16);
-    camera.beta += (camState.beta - camera.beta) * Math.min(1, dt * 16);
-    camera.radius += (camState.radius - camera.radius) * Math.min(1, dt * 12);
+    camera.alpha += (camState.alpha - camera.alpha) * Math.min(1, dt * 24);
+    camera.beta += (camState.beta - camera.beta) * Math.min(1, dt * 24);
+    camera.radius += (camState.radius - camera.radius) * Math.min(1, dt * 14);
   });
 
   loading.style.display = 'none';
