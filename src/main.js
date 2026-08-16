@@ -1,6 +1,7 @@
 import * as BABYLON from '@babylonjs/core';
 import '@babylonjs/loaders/glTF';
 import { createJoystick } from './joystick.js';
+import { createLookControls } from './camera.js';
 
 const canvas = document.getElementById('renderCanvas');
 const loading = document.getElementById('loading');
@@ -76,46 +77,55 @@ async function main() {
   const play = (a) => { if (!a || a === current) return; current?.stop(); a.play(true); current = a; };
   play(anims.idle);
 
-  // ---- cameră third-person (urmărește eroul, rotești cu degetul) ----
-  const camera = new BABYLON.ArcRotateCamera('cam', -Math.PI / 2, 1.05, 9, hero.position.clone(), scene);
-  camera.lowerRadiusLimit = 4; camera.upperRadiusLimit = 16;
-  camera.lowerBetaLimit = 0.35; camera.upperBetaLimit = 1.45;
-  camera.wheelPrecision = 40;
-  camera.attachControl(canvas, true);
-  camera.checkCollisions = false;
+  // ---- cameră third-person condusă manual (fără attachControl) ----
+  const camera = new BABYLON.ArcRotateCamera('cam', -Math.PI / 2, 1.0, 9, hero.position.clone(), scene);
+  camera.fov = 0.85;
+  camera.minZ = 0.1;
+  const camState = { alpha: -Math.PI / 2, beta: 1.0, radius: 9 };
+  const camFocus = hero.position.add(new BABYLON.Vector3(0, 1.2, 0));
 
-  // ---- controale: joystick tactil (mișcare) ----
-  const joy = createJoystick(document.getElementById('app'));
+  const app = document.getElementById('app');
+  const joy = createJoystick(app);          // stânga = mișcare
+  createLookControls(app, camState);         // dreapta = rotire + zoom
 
-  const SPEED_WALK = 3.2, SPEED_RUN = 6.2;
+  const SPEED_WALK = 3.0, SPEED_RUN = 6.4;
+  let curSpeed = 0; // rampă de viteză pentru pornire/oprire lină
+
   scene.onBeforeRenderObservable.add(() => {
-    const dt = engine.getDeltaTime() / 1000;
+    const dt = Math.min(0.05, engine.getDeltaTime() / 1000);
     const v = joy.value; // { x, y, mag } în [-1,1]
-    // direcția relativ la cameră (proiectată pe sol)
-    const fwd = hero.position.subtract(camera.position); fwd.y = 0;
-    if (fwd.lengthSquared() < 0.001) fwd.set(0, 0, 1);
-    fwd.normalize();
-    const right = BABYLON.Vector3.Cross(BABYLON.Vector3.Up(), fwd).normalize();
-    const move = fwd.scale(-v.y).add(right.scale(v.x)); // sus pe joystick = înainte
+
+    // direcția orizontală „înainte" (dinspre cameră spre erou, în scenă)
+    const fwd = new BABYLON.Vector3(-Math.cos(camState.alpha), 0, -Math.sin(camState.alpha));
+    const right = new BABYLON.Vector3(-fwd.z, 0, fwd.x); // perpendicular pe fwd (dreapta)
+    // sus pe joystick (v.y negativ) = înainte
+    const move = fwd.scale(-v.y).add(right.scale(v.x));
     move.y = 0;
 
-    if (v.mag > 0.08 && move.lengthSquared() > 0.0001) {
+    const wantMove = v.mag > 0.12 && move.lengthSquared() > 0.0001;
+    if (wantMove) {
       move.normalize();
-      const running = v.mag > 0.75;
-      const speed = running ? SPEED_RUN : SPEED_WALK;
-      hero.position.addInPlace(move.scale(speed * dt * Math.min(1, v.mag / 0.75)));
-      // rotește eroul spre direcția de mers (lin)
+      const running = v.mag > 0.7;
+      const targetSpeed = running ? SPEED_RUN : SPEED_WALK;
+      curSpeed += (targetSpeed - curSpeed) * Math.min(1, dt * 8);
+      hero.position.addInPlace(move.scale(curSpeed * dt));
+      // rotește eroul lin spre direcția de mers
       const targetYaw = Math.atan2(move.x, move.z);
-      let cur = hero.rotation.y;
-      let diff = ((targetYaw - cur + Math.PI) % (2 * Math.PI)) - Math.PI;
-      hero.rotation.y = cur + diff * Math.min(1, dt * 12);
+      const diff = ((targetYaw - hero.rotation.y + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+      hero.rotation.y += diff * Math.min(1, dt * 14);
       play(running ? anims.run : anims.walk);
     } else {
+      curSpeed += (0 - curSpeed) * Math.min(1, dt * 10);
+      if (curSpeed > 0.05) hero.position.addInPlace(move.lengthSquared() > 0 ? move.normalize().scale(curSpeed * dt) : BABYLON.Vector3.Zero());
       play(anims.idle);
     }
 
-    // camera urmărește eroul
-    camera.target = BABYLON.Vector3.Lerp(camera.target, hero.position.add(new BABYLON.Vector3(0, 1.1, 0)), Math.min(1, dt * 8));
+    // camera urmărește lin eroul + aplică alpha/beta/radius din control
+    BABYLON.Vector3.LerpToRef(camFocus, hero.position.add(new BABYLON.Vector3(0, 1.2, 0)), Math.min(1, dt * 10), camFocus);
+    camera.target.copyFrom(camFocus);
+    camera.alpha += (camState.alpha - camera.alpha) * Math.min(1, dt * 16);
+    camera.beta += (camState.beta - camera.beta) * Math.min(1, dt * 16);
+    camera.radius += (camState.radius - camera.radius) * Math.min(1, dt * 12);
   });
 
   loading.style.display = 'none';
