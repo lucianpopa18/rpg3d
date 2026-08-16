@@ -70,7 +70,7 @@ async function main() {
   model.parent = hero;
   hero.position.set(0, 0, 0);
   hero.rotation = new BABYLON.Vector3(0, 0, 0);
-  const MODEL_YAW = Math.PI; // offset de orientare al modelului (HVGirl); flip ușor dacă merge cu spatele
+  const MODEL_YAW = 0; // offset de orientare al modelului (HVGirl)
 
   const groups = res.animationGroups;
   groups.forEach(g => g.stop());
@@ -106,7 +106,7 @@ async function main() {
 
     // direcția orizontală „înainte" (dinspre cameră spre erou, în scenă)
     const fwd = new BABYLON.Vector3(-Math.cos(camState.alpha), 0, -Math.sin(camState.alpha));
-    const right = new BABYLON.Vector3(-fwd.z, 0, fwd.x);
+    const right = new BABYLON.Vector3(fwd.z, 0, -fwd.x); // dreapta ecranului (corectat, nu în oglindă)
     const move = fwd.scale(-v.y).add(right.scale(v.x)); move.y = 0;
 
     const wantMove = v.mag > 0.15 && move.lengthSquared() > 0.0001;
