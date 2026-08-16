@@ -64,10 +64,10 @@ async function main() {
   const model = res.meshes[0];
   // auto-scalează la ~1.8 unități înălțime + picioarele la sol
   const bb = model.getHierarchyBoundingVectors(true);
-  const h = Math.max(0.01, bb.maximum.y - bb.minimum.y);
+  const h = Math.max(0.01, bb.max.y - bb.min.y);
   const sc = 1.8 / h;
   model.scaling.scaleInPlace(sc);
-  model.position.set(0, -bb.minimum.y * sc, 0);
+  model.position.set(0, -bb.min.y * sc, 0);
   res.meshes.forEach(m => { if (m.getTotalVertices && m.getTotalVertices() > 0) shadow.addShadowCaster(m); });
 
   // Nod „player" curat, controlat cu Euler.
