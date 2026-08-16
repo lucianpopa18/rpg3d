@@ -60,31 +60,34 @@ async function main() {
   }
 
   // ---- personaj ----
-  const res = await BABYLON.SceneLoader.ImportMeshAsync('', '', 'HVGirl.glb', scene);
+  const res = await BABYLON.SceneLoader.ImportMeshAsync('', '', 'Knight.glb', scene);
   const model = res.meshes[0];
-  model.scaling.scaleInPlace(0.1);
-  model.position.set(0, 0, 0);
+  // auto-scalează la ~1.8 unități înălțime + picioarele la sol
+  const bb = model.getHierarchyBoundingVectors(true);
+  const h = Math.max(0.01, bb.maximum.y - bb.minimum.y);
+  const sc = 1.8 / h;
+  model.scaling.scaleInPlace(sc);
+  model.position.set(0, -bb.minimum.y * sc, 0);
   res.meshes.forEach(m => { if (m.getTotalVertices && m.getTotalVertices() > 0) shadow.addShadowCaster(m); });
 
-  // Nod „player" curat, controlat cu Euler (glTF __root__ are un quaternion de flip
-  // care ignoră .rotation — de aceea învelim modelul într-un nod al nostru).
+  // Nod „player" curat, controlat cu Euler.
   const hero = new BABYLON.TransformNode('player', scene);
   model.parent = hero;
   hero.position.set(0, 0, 0);
   hero.rotation = new BABYLON.Vector3(0, 0, 0);
-  const MODEL_YAW = 0; // offset de orientare al modelului (HVGirl)
+  const MODEL_YAW = Math.PI; // KayKit Knight — offset de orientare (flip dacă merge cu spatele)
 
   const groups = res.animationGroups;
   groups.forEach(g => g.stop());
-  const pick = (re) => groups.find(g => re.test(g.name));
+  const byName = (n) => groups.find(g => g.name === n);
   const anims = {
-    idle: pick(/idle/i) || groups[0],
-    walk: pick(/walk/i) || pick(/run/i),
-    run: pick(/run/i) || pick(/walk/i),
+    idle: byName('Idle'),
+    walk: byName('Walking_C') || byName('Walking_A'),
+    run: byName('Running_A') || byName('Running_B'),
+    attack: byName('1H_Melee_Attack_Slice_Horizontal') || byName('1H_Melee_Attack_Chop'),
   };
-  console.log('Animații găsite:', groups.map(g => g.name).join(', '));
-  let current = null;
-  const play = (a) => { if (!a || a === current) return; current?.stop(); a.play(true); current = a; };
+  let current = null, attackLock = 0;
+  const play = (a, loop = true) => { if (!a || a === current) return; current?.stop(); a.play(loop); current = a; };
   play(anims.idle);
 
   // ---- cameră third-person condusă manual (fără attachControl) ----
@@ -124,7 +127,8 @@ async function main() {
 
   const doAttack = () => {
     if (attackCd > 0) return;
-    attackCd = 0.5; attackAnimT = 0.28; slashT = 0.22; slash.setEnabled(true);
+    attackCd = 0.62; attackLock = 0.55; slashT = 0.22; slash.setEnabled(true);
+    play(anims.attack, false); // animație reală de atac (o dată)
     let best = null, bestD = ATTACK_RANGE;
     for (const e of enemies) { if (e.dead) continue; const d = e.pos.subtract(hero.position); d.y = 0; const dl = d.length(); if (dl < bestD) { bestD = dl; best = e; } }
     if (best) {
@@ -167,10 +171,10 @@ async function main() {
       const targetYaw = Math.atan2(move.x, move.z) + MODEL_YAW;
       const diff = ((targetYaw - hero.rotation.y + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
       hero.rotation.y += diff * Math.min(1, dt * 16);
-      play(running ? anims.run : anims.walk);
+      if (attackLock <= 0) play(running ? anims.run : anims.walk);
     } else {
       curSpeed += (0 - curSpeed) * Math.min(1, dt * 12);
-      play(anims.idle);
+      if (attackLock <= 0) play(anims.idle);
     }
     // deplasare (folosește ultima direcție validă la decelerare — fără NaN)
     if (curSpeed > 0.02) hero.position.addInPlace(lastDir.scale(curSpeed * dt));
@@ -186,9 +190,7 @@ async function main() {
     const nowS = performance.now() / 1000;
     attackCd = Math.max(0, attackCd - dt);
 
-    // animație de atac: thrust scurt înainte (lunge)
-    attackAnimT = Math.max(0, attackAnimT - dt);
-    model.position.z = Math.sin((1 - attackAnimT / 0.28) * Math.PI) * (attackAnimT > 0 ? 0.5 : 0);
+    attackLock = Math.max(0, attackLock - dt); // cât timp rulează animația de atac
 
     // efect de lovire (disc în fața eroului)
     if (slashT > 0) {
