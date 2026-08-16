@@ -2,6 +2,8 @@ import * as BABYLON from '@babylonjs/core';
 import '@babylonjs/loaders/glTF';
 import { createJoystick } from './joystick.js';
 import { createLookControls } from './camera.js';
+import { createEnemies } from './enemies.js';
+import { createPlayerHud, createAttackButton, createEnemyBar } from './ui.js';
 
 const canvas = document.getElementById('renderCanvas');
 const loading = document.getElementById('loading');
@@ -96,6 +98,35 @@ async function main() {
   const joy = createJoystick(app);          // stânga = mișcare
   createLookControls(app, camState);         // dreapta = rotire + zoom
 
+  // ---- combat: inamici + HP + atac ----
+  const enemies = createEnemies(scene, shadow, 6);
+  const hud = createPlayerHud(app);
+  const enemyBars = enemies.map(() => createEnemyBar(app));
+  let playerHp = 100; const PLAYER_MAX = 100;
+  let attackCd = 0, lastBite = 0, slashT = 0;
+  const ATTACK_RANGE = 3.0, ATTACK_DMG = 26;
+
+  // efect de lovire (disc care se extinde și dispare)
+  const slash = BABYLON.MeshBuilder.CreateDisc('slash', { radius: 1, tessellation: 24 }, scene);
+  const slashMat = new BABYLON.StandardMaterial('slashMat', scene);
+  slashMat.emissiveColor = new BABYLON.Color3(1, 1, 0.8); slashMat.disableLighting = true;
+  slashMat.alpha = 0; slash.material = slashMat; slash.rotation.x = Math.PI / 2; slash.setEnabled(false);
+
+  const doAttack = () => {
+    if (attackCd > 0) return;
+    attackCd = 0.5;
+    let best = null, bestD = ATTACK_RANGE;
+    for (const e of enemies) { if (e.dead) continue; const d = e.pos.subtract(hero.position); d.y = 0; const dl = d.length(); if (dl < bestD) { bestD = dl; best = e; } }
+    if (best) {
+      const dir = best.pos.subtract(hero.position); dir.y = 0; dir.normalize();
+      hero.rotation.y = Math.atan2(dir.x, dir.z) + MODEL_YAW;
+      best.damage(ATTACK_DMG, performance.now() / 1000);
+    }
+    slashT = 0.22; slash.setEnabled(true);
+  };
+  createAttackButton(app, doAttack);
+  const viewport = () => new BABYLON.Viewport(0, 0, canvas.clientWidth, canvas.clientHeight);
+
   const SPEED_WALK = 3.0, SPEED_RUN = 6.6;
   let curSpeed = 0;                          // rampă de viteză
   const lastDir = new BABYLON.Vector3(0, 0, 1); // ultima direcție validă (pt. oprire lină, fără NaN)
@@ -134,6 +165,40 @@ async function main() {
     camera.alpha += (camState.alpha - camera.alpha) * Math.min(1, dt * 24);
     camera.beta += (camState.beta - camera.beta) * Math.min(1, dt * 24);
     camera.radius += (camState.radius - camera.radius) * Math.min(1, dt * 14);
+
+    // ---- combat ----
+    const nowS = performance.now() / 1000;
+    attackCd = Math.max(0, attackCd - dt);
+
+    // efect de lovire (disc în fața eroului)
+    if (slashT > 0) {
+      slashT -= dt;
+      const yaw = hero.rotation.y - MODEL_YAW;
+      const f = new BABYLON.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+      slash.position.copyFrom(hero.position.add(f.scale(1.3))); slash.position.y = 0.7;
+      const k = 1 - Math.max(0, slashT) / 0.22;
+      slash.scaling.setAll(0.5 + k * 1.6); slashMat.alpha = (1 - k) * 0.75;
+      if (slashT <= 0) slash.setEnabled(false);
+    }
+
+    // inamici + bare de HP + damage de contact
+    const vp = viewport();
+    const tm = scene.getTransformMatrix();
+    let contact = false;
+    for (let i = 0; i < enemies.length; i++) {
+      const e = enemies[i];
+      const d = e.update(dt, hero.position, nowS);
+      if (!e.dead && typeof d === 'number' && d < 1.4) contact = true;
+      const bar = enemyBars[i];
+      if (e.dead || e.hp >= e.maxHp) { bar.set(0, 0, 0, false); continue; }
+      const p = BABYLON.Vector3.Project(e.pos.add(new BABYLON.Vector3(0, 1.6, 0)), BABYLON.Matrix.Identity(), tm, vp);
+      bar.set(p.x, p.y, e.hp / e.maxHp, p.z > 0 && p.z < 1);
+    }
+
+    // damage de contact spre jucător
+    if (contact && nowS - lastBite > 0.7) { playerHp = Math.max(0, playerHp - 8); lastBite = nowS; }
+    if (playerHp <= 0) { playerHp = PLAYER_MAX; hero.position.set(0, 0, 0); }
+    hud.setHp(playerHp, PLAYER_MAX);
   });
 
   loading.style.display = 'none';
