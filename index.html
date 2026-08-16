@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ro">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#0d1a12" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>RPG3D</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+      html, body, #app { width: 100%; height: 100%; overflow: hidden; background: #0d1a12; touch-action: none; }
+      #renderCanvas { width: 100%; height: 100%; display: block; outline: none; }
+      #loading { position: fixed; inset: 0; display: grid; place-items: center; color: #cfe3d6;
+        font-family: -apple-system, system-ui, sans-serif; font-weight: 700; font-size: 15px; z-index: 10; }
+    </style>
+    <script type="module" crossorigin src="/rpg3d/assets/index-DHiplkji.js"></script>
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="renderCanvas"></canvas>
+      <div id="loading">Se încarcă lumea 3D…</div>
+    </div>
+  </body>
+</html>
