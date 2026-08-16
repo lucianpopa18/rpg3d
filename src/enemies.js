@@ -3,17 +3,19 @@ import * as BABYLON from '@babylonjs/core';
 // Inamic „slime" — procedural (fără asseturi): sferă turtită care saltă, rătăcește,
 // devine agresivă lângă jucător, primește damage, moare și reapare.
 class Slime {
-  constructor(scene, shadow, home) {
+  constructor(scene, shadow, home, big = false) {
     this.scene = scene;
     this.home = home.clone();
-    this.maxHp = 60;
+    this.big = big;
+    this.maxHp = big ? 150 : 60;
+    this.baseY = big ? 0.72 : 0.47;
     this.root = new BABYLON.TransformNode('slime', scene);
-    const body = BABYLON.MeshBuilder.CreateSphere('sbody', { diameter: 1.3, segments: 10 }, scene);
+    const body = BABYLON.MeshBuilder.CreateSphere('sbody', { diameter: big ? 2 : 1.3, segments: 10 }, scene);
     body.scaling.set(1, 0.72, 1);
     body.parent = this.root;
-    body.position.y = 0.47;
+    body.position.y = this.baseY;
     const mat = new BABYLON.StandardMaterial('smat', scene);
-    mat.diffuseColor = new BABYLON.Color3(0.25, 0.75, 0.35);
+    mat.diffuseColor = big ? new BABYLON.Color3(0.6, 0.25, 0.55) : new BABYLON.Color3(0.25, 0.75, 0.35);
     mat.specularColor = new BABYLON.Color3(0.3, 0.5, 0.3);
     mat.emissiveColor = new BABYLON.Color3(0, 0, 0);
     body.material = mat;
@@ -83,12 +85,13 @@ class Slime {
   }
 }
 
-export function createEnemies(scene, shadow, count = 6) {
+export function createEnemies(scene, shadow, count = 7) {
   const list = [];
   for (let i = 0; i < count; i++) {
     const a = (i / count) * Math.PI * 2, r = 14 + Math.random() * 20;
     const home = new BABYLON.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r);
-    list.push(new Slime(scene, shadow, home));
+    const big = i % 3 === 2; // ~1/3 slime-uri mari (mov, mai tari)
+    list.push(new Slime(scene, shadow, home, big));
   }
   return list;
 }

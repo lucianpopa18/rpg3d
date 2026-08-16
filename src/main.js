@@ -3,7 +3,7 @@ import '@babylonjs/loaders/glTF';
 import { createJoystick } from './joystick.js';
 import { createLookControls } from './camera.js';
 import { createEnemies } from './enemies.js';
-import { createPlayerHud, createAttackButton, createEnemyBar } from './ui.js';
+import { createPlayerHud, createAttackButton, createEnemyBar, createXpBar, spawnDamageNumber } from './ui.js';
 
 const canvas = document.getElementById('renderCanvas');
 const loading = document.getElementById('loading');
@@ -101,10 +101,14 @@ async function main() {
   // ---- combat: inamici + HP + atac ----
   const enemies = createEnemies(scene, shadow, 6);
   const hud = createPlayerHud(app);
+  const xpBar = createXpBar(app);
   const enemyBars = enemies.map(() => createEnemyBar(app));
   let playerHp = 100; const PLAYER_MAX = 100;
-  let attackCd = 0, lastBite = 0, slashT = 0;
+  let attackCd = 0, lastBite = 0, slashT = 0, attackAnimT = 0;
   const ATTACK_RANGE = 3.0, ATTACK_DMG = 26;
+  // XP / nivel
+  let level = 1, xp = 0, xpNeed = 100;
+  xpBar.set(0, xpNeed, level);
 
   // efect de lovire (disc care se extinde și dispare)
   const slash = BABYLON.MeshBuilder.CreateDisc('slash', { radius: 1, tessellation: 24 }, scene);
@@ -112,17 +116,29 @@ async function main() {
   slashMat.emissiveColor = new BABYLON.Color3(1, 1, 0.8); slashMat.disableLighting = true;
   slashMat.alpha = 0; slash.material = slashMat; slash.rotation.x = Math.PI / 2; slash.setEnabled(false);
 
+  const grantXp = (n) => {
+    xp += n;
+    while (xp >= xpNeed) { xp -= xpNeed; level++; xpNeed = Math.round(xpNeed * 1.35); playerHp = PLAYER_MAX; spawnDamageNumber(app, window.innerWidth / 2, window.innerHeight * 0.4, 'NIVEL ' + level + '! ⬆️', true); }
+    xpBar.set(xp, xpNeed, level);
+  };
+
   const doAttack = () => {
     if (attackCd > 0) return;
-    attackCd = 0.5;
+    attackCd = 0.5; attackAnimT = 0.28; slashT = 0.22; slash.setEnabled(true);
     let best = null, bestD = ATTACK_RANGE;
     for (const e of enemies) { if (e.dead) continue; const d = e.pos.subtract(hero.position); d.y = 0; const dl = d.length(); if (dl < bestD) { bestD = dl; best = e; } }
     if (best) {
       const dir = best.pos.subtract(hero.position); dir.y = 0; dir.normalize();
       hero.rotation.y = Math.atan2(dir.x, dir.z) + MODEL_YAW;
-      best.damage(ATTACK_DMG, performance.now() / 1000);
+      const crit = Math.random() < 0.2;
+      const dmg = crit ? Math.round(ATTACK_DMG * 1.8) : ATTACK_DMG;
+      const wasAlive = !best.dead;
+      best.damage(dmg, performance.now() / 1000);
+      // număr de damage la poziția inamicului pe ecran
+      const p = BABYLON.Vector3.Project(best.pos.add(new BABYLON.Vector3(0, 1.4, 0)), BABYLON.Matrix.Identity(), scene.getTransformMatrix(), new BABYLON.Viewport(0, 0, canvas.clientWidth, canvas.clientHeight));
+      if (p.z > 0 && p.z < 1) spawnDamageNumber(app, p.x, p.y, String(dmg), crit);
+      if (wasAlive && best.dead) grantXp(best.big ? 80 : 35);
     }
-    slashT = 0.22; slash.setEnabled(true);
   };
   createAttackButton(app, doAttack);
   const viewport = () => new BABYLON.Viewport(0, 0, canvas.clientWidth, canvas.clientHeight);
@@ -170,6 +186,10 @@ async function main() {
     const nowS = performance.now() / 1000;
     attackCd = Math.max(0, attackCd - dt);
 
+    // animație de atac: thrust scurt înainte (lunge)
+    attackAnimT = Math.max(0, attackAnimT - dt);
+    model.position.z = Math.sin((1 - attackAnimT / 0.28) * Math.PI) * (attackAnimT > 0 ? 0.5 : 0);
+
     // efect de lovire (disc în fața eroului)
     if (slashT > 0) {
       slashT -= dt;
@@ -184,11 +204,11 @@ async function main() {
     // inamici + bare de HP + damage de contact
     const vp = viewport();
     const tm = scene.getTransformMatrix();
-    let contact = false;
+    let contactDmg = 0;
     for (let i = 0; i < enemies.length; i++) {
       const e = enemies[i];
       const d = e.update(dt, hero.position, nowS);
-      if (!e.dead && typeof d === 'number' && d < 1.4) contact = true;
+      if (!e.dead && typeof d === 'number' && d < (e.big ? 1.9 : 1.4)) contactDmg = Math.max(contactDmg, e.big ? 15 : 8);
       const bar = enemyBars[i];
       if (e.dead || e.hp >= e.maxHp) { bar.set(0, 0, 0, false); continue; }
       const p = BABYLON.Vector3.Project(e.pos.add(new BABYLON.Vector3(0, 1.6, 0)), BABYLON.Matrix.Identity(), tm, vp);
@@ -196,7 +216,7 @@ async function main() {
     }
 
     // damage de contact spre jucător
-    if (contact && nowS - lastBite > 0.7) { playerHp = Math.max(0, playerHp - 8); lastBite = nowS; }
+    if (contactDmg > 0 && nowS - lastBite > 0.7) { playerHp = Math.max(0, playerHp - contactDmg); lastBite = nowS; }
     if (playerHp <= 0) { playerHp = PLAYER_MAX; hero.position.set(0, 0, 0); }
     hud.setHp(playerHp, PLAYER_MAX);
   });

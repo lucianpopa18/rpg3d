@@ -24,6 +24,30 @@ export function createAttackButton(parent, onAttack) {
   return btn;
 }
 
+export function createXpBar(parent) {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:fixed;left:14px;top:calc(env(safe-area-inset-top,0px) + 56px);z-index:8;'
+    + 'width:200px;max-width:44vw;font-family:-apple-system,system-ui,sans-serif;color:#fff;pointer-events:none;';
+  wrap.innerHTML = '<div id="lvltxt" style="font-weight:800;font-size:11px;text-shadow:0 1px 2px #000;margin-bottom:2px;">Nivel 1</div>'
+    + '<div style="height:9px;border-radius:5px;background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.3);overflow:hidden;">'
+    + '<div id="xpfill" style="height:100%;width:0%;background:linear-gradient(90deg,#f1c40f,#ffe694);transition:width .2s;"></div></div>';
+  parent.appendChild(wrap);
+  const fill = wrap.querySelector('#xpfill'), txt = wrap.querySelector('#lvltxt');
+  return { set: (cur, need, lvl) => { fill.style.width = Math.min(100, (cur / need) * 100) + '%'; txt.textContent = 'Nivel ' + lvl; } };
+}
+
+export function spawnDamageNumber(parent, x, y, text, crit) {
+  const el = document.createElement('div');
+  el.textContent = text;
+  el.style.cssText = 'position:fixed;left:' + x + 'px;top:' + y + 'px;z-index:9;pointer-events:none;'
+    + 'font-family:-apple-system,system-ui,sans-serif;font-weight:900;transform:translate(-50%,-50%);'
+    + 'text-shadow:0 2px 3px #000;' + (crit ? 'color:#ffd23f;font-size:26px;' : 'color:#fff;font-size:19px;')
+    + 'transition:transform .6s ease-out,opacity .6s ease-out;';
+  parent.appendChild(el);
+  requestAnimationFrame(() => { el.style.transform = 'translate(-50%,-140%)'; el.style.opacity = '0'; });
+  setTimeout(() => el.remove(), 650);
+}
+
 export function createEnemyBar(parent) {
   const wrap = document.createElement('div');
   wrap.style.cssText = 'position:fixed;width:56px;height:7px;border-radius:4px;background:rgba(0,0,0,.5);'
